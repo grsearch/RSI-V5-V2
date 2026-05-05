@@ -20,10 +20,9 @@ class TokenPoolManager extends EventEmitter {
     this.refreshIntervalMs = opts.refreshIntervalMs || 30_000;
     this.onTokenRemoved = opts.onTokenRemoved || (() => {});
     this.persistPath = opts.persistPath || path.join(__dirname, '..', '..', 'data', 'token_pool.json');
+    this.ageResolver = opts.ageResolver || null;  // 注入 TokenAgeResolver
 
     // address -> tokenMeta
-    // tokenMeta: { address, symbol, addedAt, listedAt, fdv, lpUsd, lpSol,
-    //               topHolderPct, mintAuthority, freezeAuthority, lastChecked }
     this.tokens = new Map();
     this.refreshTimer = null;
   }
@@ -77,11 +76,20 @@ class TokenPoolManager extends EventEmitter {
       return { ok: false, msg: `LP ${meta.lpUsd} < ${this.minLpUsd},拒绝加入` };
     }
 
+    // 用 ageResolver 拿精确的创建时间(Birdeye lastTradeUnixTime 不准)
+    let listedAt = null;
+    if (this.ageResolver) {
+      const createdSec = await this.ageResolver.getCreatedAt(req.address);
+      if (createdSec) listedAt = createdSec * 1000;
+    }
+    if (!listedAt && meta.listedAt) listedAt = meta.listedAt;
+    if (!listedAt) listedAt = Date.now();  // 兜底
+
     const tokenMeta = {
       address: req.address,
       symbol: req.symbol || meta.symbol || req.address.slice(0, 6),
       addedAt: Date.now(),
-      listedAt: meta.listedAt || Date.now(),
+      listedAt,
       fdv: meta.fdv,
       lpUsd: meta.lpUsd,
       lpSol: meta.lpSol,
@@ -93,7 +101,8 @@ class TokenPoolManager extends EventEmitter {
     this.tokens.set(req.address, tokenMeta);
     this._persist();
     this.emit('token:added', tokenMeta);
-    console.log(`[POOL] + 加入 ${tokenMeta.symbol} (${tokenMeta.address.slice(0,6)}) FDV=$${tokenMeta.fdv?.toFixed(0)} LP=$${tokenMeta.lpUsd?.toFixed(0)}`);
+    const ageHours = (Date.now() - listedAt) / 3600_000;
+    console.log(`[POOL] + 加入 ${tokenMeta.symbol} (${tokenMeta.address.slice(0,6)}) FDV=$${tokenMeta.fdv?.toFixed(0)} LP=$${tokenMeta.lpUsd?.toFixed(0)} age=${ageHours.toFixed(1)}h`);
     return { ok: true, token: tokenMeta };
   }
 

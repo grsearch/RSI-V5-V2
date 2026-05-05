@@ -4,9 +4,16 @@
  * 为每个 token 创建一套独立的 (CandleAggregator + IndicatorEngine + Signal)
  * 路由 Helius 的 tick 事件到对应 token 的 aggregator
  * 处理 BUY/SELL 事件 → 调用 Executor 实际下单 (DRY_RUN 时只记录)
+ *
+ * Token 加入流程(2026-05-05 改):
+ *   1. 创建 agg + ind + signal
+ *   2. **从 Birdeye 拉历史 1m K 线预填充 RSI**(token 至少 1 天以上才有效)
+ *   3. 订阅 Helius tick(实时增量)
  */
 const { CandleAggregator, IndicatorEngine } = require('../data/IndicatorEngine');
 const WickReversalSignal = require('./WickReversalSignal');
+const HistoricalCandleLoader = require('../data/HistoricalCandleLoader');
+const BirdeyePriceFeed = require('../data/BirdeyePriceFeed');
 const Executor = require('../exec/Executor');
 
 class StrategyOrchestrator {
@@ -17,14 +24,24 @@ class StrategyOrchestrator {
     this.config = opts.config;
     this.dryRun = opts.dryRun;
 
-    // address -> { agg, ind, signal, sub, tokenMeta }
     this.instances = new Map();
-    // address -> { entryPrice, entryTs, sizeSol, ... } 当前持仓
     this.positions = new Map();
 
     this.executor = new Executor({
       dryRun: this.dryRun,
       walletPrivateKey: this.config.walletPrivateKey,
+    });
+
+    this.historicalLoader = new HistoricalCandleLoader({
+      birdeyeApiKey: this.config.birdeyeApiKey,
+      lookbackBars: 100,
+    });
+
+    // Birdeye 价格 feed 作为 Helius 的兜底
+    // 每 30 秒拉一次最近 5 分钟的 1m candle,补充 closed candle 的 volume
+    this.birdeyeFeed = new BirdeyePriceFeed({
+      birdeyeApiKey: this.config.birdeyeApiKey,
+      refreshIntervalMs: 30_000,
     });
   }
 
@@ -37,18 +54,26 @@ class StrategyOrchestrator {
       if (inst) inst.agg.onTick(tick);
     });
 
-    // 监听 token 池变化
-    this.tokenPool.on('token:added', (t) => this._addInstance(t));
+    // 监听 token 池变化(异步加入,不 block)
+    this.tokenPool.on('token:added', (t) => {
+      this._addInstance(t).catch(e =>
+        console.error(`[ORCH] add ${t.symbol} failed:`, e.message));
+    });
     this.tokenPool.on('token:removed', (t) => this._removeInstance(t));
 
-    // 已有 token 启动监控
-    for (const t of this.tokenPool.getAll()) {
-      this._addInstance(t);
-    }
-    console.log(`[ORCH] 启动 ${this.instances.size} 个 token 监控`);
+    // 已有 token 启动监控(并发预热,不阻塞 init)
+    const existing = this.tokenPool.getAll();
+    Promise.all(existing.map(t => this._addInstance(t))).then(() => {
+      console.log(`[ORCH] 全部 ${existing.length} 个 token 历史 K 线已加载`);
+    });
+    console.log(`[ORCH] 启动 ${existing.length} 个 token 监控(异步预热中)`);
+
+    // 启动 Birdeye 兜底 feed(每 30s 补 closed candle volume)
+    this.birdeyeFeed.start();
+    console.log(`[ORCH] BirdeyeFeed 启动(每 30s 补 closed candle volume)`);
   }
 
-  _addInstance(tokenMeta) {
+  async _addInstance(tokenMeta) {
     if (this.instances.has(tokenMeta.address)) return;
 
     const agg = new CandleAggregator(60);
@@ -64,10 +89,36 @@ class StrategyOrchestrator {
     signal.on('SELL', (evt) => this._onSellSignal(evt, tokenMeta));
     signal.on('SKIP', (evt) => this.tradeLogger.logSignal({ type: 'SKIP', ...evt }));
 
+    // 注册到 instances 一定要在 signal.start() 前(否则 tick 进来路由不到)
+    this.instances.set(tokenMeta.address, { agg, ind, signal, sub: null, tokenMeta });
+
+    // 关键:先从 Birdeye 拉历史 K 线预填充,再启动 signal
+    // 这样 signal 启动时 RSI 已经稳定,且 volume MA 基准已建立
+    try {
+      const result = await this.historicalLoader.loadAndPrefill(
+        tokenMeta.address, agg, ind, signal);
+      if (result.candleCount > 0) {
+        console.log(`[ORCH] ${tokenMeta.symbol} 预填充 ${result.candleCount} 根 (${result.validVolumeCount} 根有量), ` +
+          `RSI=${result.latestRsi?.toFixed(2)}, avgVol=${result.avgVolume?.toFixed(2)}, ` +
+          `lastVol=${result.latestVolume?.toFixed(2)}`);
+        if (result.validVolumeCount === 0) {
+          console.warn(`[ORCH] ⚠️  ${tokenMeta.symbol} volume 全是 0!检查 Birdeye 是否支持此 token`);
+        }
+      } else {
+        console.log(`[ORCH] ${tokenMeta.symbol} 历史 K 线为空(可能太新或 Birdeye 没数据),依赖实时 tick 累积`);
+      }
+    } catch (e) {
+      console.error(`[ORCH] ${tokenMeta.symbol} 预填充失败:`, e.message);
+    }
+
+    // 订阅 Helius tick + 启动 signal
     const sub = this.helius.subscribeToken(tokenMeta.address);
+    const inst = this.instances.get(tokenMeta.address);
+    if (inst) inst.sub = sub;
     signal.start();
 
-    this.instances.set(tokenMeta.address, { agg, ind, signal, sub, tokenMeta });
+    // 注册到 BirdeyeFeed 兜底(每 30s 补 closed candle volume)
+    this.birdeyeFeed.subscribe(tokenMeta.address, agg, ind, signal);
   }
 
   _removeInstance(tokenMeta) {
@@ -75,6 +126,7 @@ class StrategyOrchestrator {
     if (!inst) return;
     inst.signal.stop();
     inst.sub.unsubscribe && inst.sub.unsubscribe();
+    this.birdeyeFeed.unsubscribe(tokenMeta.address);
     this.instances.delete(tokenMeta.address);
   }
 
@@ -188,6 +240,39 @@ class StrategyOrchestrator {
 
   getPositions() {
     return Array.from(this.positions.values());
+  }
+
+  /**
+   * 拿单个 token 的实时状态(供 Dashboard 显示)
+   */
+  getInstanceState(address) {
+    const inst = this.instances.get(address);
+    if (!inst) return null;
+    const cur = inst.agg.getCurrentCandle();
+    const lastClosed = inst.agg.getCompletedCandles(1)[0];
+    const rsi = inst.ind.getRSI();
+    const prevRsi = inst.ind.getPrevRSI();
+    const stepRsi = inst.ind.getStepRSI();
+    return {
+      lastPrice: cur?.close ?? lastClosed?.close ?? null,
+      rsi,
+      prevRsi,
+      stepRsi,
+      candleCount: inst.agg.completedCandles.length,
+      hasPosition: this.positions.has(address),
+      currentVolume: cur?.volume ?? 0,
+    };
+  }
+
+  /**
+   * 拿所有 token 的状态(供 Dashboard /api/tokens 用)
+   */
+  getAllInstanceStates() {
+    const out = {};
+    for (const [addr, _] of this.instances) {
+      out[addr] = this.getInstanceState(addr);
+    }
+    return out;
   }
 }
 

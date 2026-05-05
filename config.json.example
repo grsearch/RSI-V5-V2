@@ -1,8 +1,10 @@
 {
   "dryRun": true,
   "heliusApiKey": "你的_helius_key",
-  "heliusEndpoint": "wss://laserstream-mainnet-tokyo.helius-rpc.com",
+  "heliusEndpoint": "wss://laserstream-mainnet.helius-rpc.com",
   "heliusRegion": "tokyo",
+
+  "birdeyeApiKey": "你的_birdeye_key",
 
   "walletPrivateKey": "实盘时填入",
 

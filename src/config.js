@@ -19,8 +19,11 @@ function loadConfig() {
 
     // Helius
     heliusApiKey: process.env.HELIUS_API_KEY || fileConfig.heliusApiKey || '',
-    heliusEndpoint: fileConfig.heliusEndpoint || 'wss://mainnet.helius-rpc.com',
+    heliusEndpoint: fileConfig.heliusEndpoint || 'wss://laserstream-mainnet.helius-rpc.com',
     heliusRegion: fileConfig.heliusRegion || 'tokyo',
+
+    // Birdeye(用于 token age, FDV/LP 元数据, 历史 K 线)
+    birdeyeApiKey: process.env.BIRDEYE_API_KEY || fileConfig.birdeyeApiKey || '',
 
     // 钱包(实盘必须)
     walletPrivateKey: process.env.WALLET_PRIVATE_KEY || fileConfig.walletPrivateKey || '',

@@ -87,6 +87,11 @@ td { padding: 7px 6px; border-top: 1px solid #1a2030; font-size: 12px; }
 tr:hover td { background: #0f141d; }
 .symbol { font-weight: 500; color: #d0d4dc; }
 .addr { color: #6b7280; font-family: monospace; }
+.ca-link {
+  color: #6366f1; text-decoration: none;
+  border-bottom: 1px dashed #4338ca;
+}
+.ca-link:hover { color: #818cf8; border-bottom-color: #818cf8; }
 .purple { color: #a855f7; }
 .dim { color: #6b7280; }
 .action-btn {
@@ -211,14 +216,21 @@ function fmtUsd(n) {
   if (n >= 1_000) return '$' + (n/1_000).toFixed(0) + 'K';
   return '$' + Math.round(n);
 }
-function fmtAge(addedAt, listedAt) {
-  const ms = Date.now() - (listedAt || addedAt);
+function fmtAge(t) {
+  // 优先用 listedAt(精确创建时间),否则 fallback 到 addedAt(加入到监控的时间)
+  const baseTs = t.listedAt || t.addedAt;
+  if (!baseTs) return '-';
+  const ms = Date.now() - baseTs;
   const h = ms / 3600_000;
+  if (h < 1) return Math.round(ms/60_000) + 'm';
   if (h < 24) return h.toFixed(1) + 'h';
   return (h/24).toFixed(1) + 'd';
 }
 function shortAddr(addr) {
   return addr.slice(0, 4) + '...' + addr.slice(-4);
+}
+function gmgnUrl(addr) {
+  return `https://gmgn.ai/sol/token/${addr}`;
 }
 function timeStr(ts) {
   const d = new Date(ts);
@@ -265,15 +277,17 @@ function renderTokenTable() {
 
   document.getElementById('tokenTable').innerHTML = slice.map(t => {
     const status = t.hasPosition ? '<span class="green">持仓</span>' : '<span class="dim">观望</span>';
+    const rsiCls = (t.rsi != null && t.rsi < 30) ? 'red'
+                 : (t.rsi != null && t.rsi > 70) ? 'green' : '';
     return `<tr>
       <td class="symbol">${t.symbol}</td>
-      <td class="addr">${shortAddr(t.address)}</td>
-      <td>${fmt(t.lastPrice, 8) || '-'}</td>
+      <td class="addr"><a href="${gmgnUrl(t.address)}" target="_blank" rel="noopener" class="ca-link">${shortAddr(t.address)}</a></td>
+      <td>${t.lastPrice != null ? fmt(t.lastPrice, 8) : '-'}</td>
       <td>${fmtUsd(t.fdv)}</td>
       <td>${fmtUsd(t.lpUsd)}</td>
-      <td>${fmtAge(t.addedAt, t.listedAt)}</td>
-      <td class="${(t.rsi||50) < 30 ? 'red' : (t.rsi||50) > 70 ? 'green' : ''}">${fmt(t.rsi, 2) || '-'}</td>
-      <td class="dim">${fmt(t.prevRsi, 2) || '-'}</td>
+      <td>${fmtAge(t)}</td>
+      <td class="${rsiCls}">${t.rsi != null ? fmt(t.rsi, 2) : '-'}</td>
+      <td class="dim">${t.prevRsi != null ? fmt(t.prevRsi, 2) : '-'}</td>
       <td>${t.lastSignal || 'none'}</td>
       <td class="dim">${t.lastSignalReason || '-'}</td>
       <td>${t.candleCount || 0}</td>

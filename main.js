@@ -9,6 +9,7 @@
 const path = require('path');
 const fs = require('fs');
 const TokenPoolManager = require('./src/data/TokenPoolManager');
+const TokenAgeResolver = require('./src/data/TokenAgeResolver');
 const DashboardServer = require('./src/dashboard/DashboardServer');
 const DailyReporter = require('./src/reports/DailyReporter');
 const TradeLogger = require('./src/data/TradeLogger');
@@ -34,6 +35,12 @@ async function main() {
     logsDir: path.join(__dirname, 'logs'),
   });
 
+  // Token age 解析器(Birdeye + Helius fallback,带永久缓存)
+  const ageResolver = new TokenAgeResolver({
+    birdeyeApiKey: config.birdeyeApiKey,
+    heliusApiKey: config.heliusApiKey,
+  });
+
   // Helius 数据源
   const helius = new HeliusClient({
     apiKey: config.heliusApiKey,
@@ -46,6 +53,7 @@ async function main() {
     minFdv: config.minFdv,           // 默认 30000
     minLpUsd: config.minLpUsd,       // 默认 10000
     refreshIntervalMs: 30 * 1000,    // 每 30 秒检查一次 FDV/LP
+    ageResolver,
     onTokenRemoved: async (token, reason) => {
       console.log(`[POOL] 移除 ${token.symbol}: ${reason}`);
       // 移除前检查持仓,有持仓先卖

@@ -46,11 +46,14 @@ class DashboardServer {
     });
 
     this.app.get('/api/tokens', (req, res) => {
+      const states = this.orchestrator.getAllInstanceStates();
       const tokens = this.tokenPool.getAll().map(t => {
-        const pos = this.orchestrator.getPositions().find(p => p.tokenMeta.address === t.address);
+        const state = states[t.address] || {};
         return {
           ...t,
-          hasPosition: !!pos,
+          ...state,
+          // 计算 age 用 listedAt(已经是 unix ms)
+          age: t.listedAt ? Date.now() - t.listedAt : null,
         };
       });
       res.json({ ok: true, tokens });
