@@ -1,0 +1,17 @@
+{
+  "name": "sol-rsi-volume-v5",
+  "version": "5.0.0",
+  "description": "SOL meme RSI<10 + Volume bot with dashboard and daily reports",
+  "main": "main.js",
+  "scripts": {
+    "start": "node main.js",
+    "dry": "DRY_RUN=1 node main.js",
+    "report": "node -e \"require('./src/reports/DailyReporter'); /* manually trigger */\""
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

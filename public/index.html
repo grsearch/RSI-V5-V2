@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>SOL RSI+量能 V5</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: #0a0e14;
+  color: #d0d4dc;
+  font-size: 13px;
+  padding: 16px;
+}
+.header {
+  display: flex; align-items: center; gap: 16px; margin-bottom: 20px;
+}
+.logo {
+  font-size: 18px; font-weight: 700;
+  display: flex; align-items: center; gap: 8px;
+}
+.logo .sol-icon {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: linear-gradient(135deg, #9945FF 0%, #14F195 100%);
+}
+.brand { color: #9945FF; }
+.tag {
+  background: #2a1f1f; color: #ff5757;
+  padding: 4px 10px; border-radius: 4px; font-size: 12px;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.tag .dot { width: 6px; height: 6px; border-radius: 50%; background: #ff5757; }
+.tag.live { background: #1f2a1f; color: #14F195; }
+.tag.live .dot { background: #14F195; }
+.status-pill {
+  background: #1a2030; padding: 4px 10px; border-radius: 4px;
+  font-size: 12px; color: #888;
+}
+.section-title { color: #888; font-size: 13px; margin-bottom: 10px; font-weight: 500; }
+
+/* Stats Cards */
+.stats-grid {
+  display: grid; grid-template-columns: repeat(8, 1fr);
+  gap: 10px; margin-bottom: 20px;
+}
+.stat-card {
+  background: #131822; border: 1px solid #1f2937;
+  border-radius: 6px; padding: 14px;
+}
+.stat-value { font-size: 22px; font-weight: 600; margin-bottom: 4px; font-variant-numeric: tabular-nums; }
+.stat-label { color: #6b7280; font-size: 11px; }
+.green { color: #14F195; }
+.red { color: #ff5757; }
+.gray { color: #d0d4dc; }
+
+/* Tables */
+.panel {
+  background: #131822; border: 1px solid #1f2937;
+  border-radius: 6px; padding: 14px; margin-bottom: 14px;
+}
+.panel-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 12px;
+}
+.panel-title { color: #d0d4dc; font-weight: 500; }
+.panel-meta { color: #6b7280; font-size: 11px; }
+
+.add-bar {
+  display: flex; gap: 8px; margin-bottom: 12px;
+}
+.add-bar input {
+  background: #0a0e14; border: 1px solid #2a3447;
+  color: #d0d4dc; padding: 8px 12px; border-radius: 4px;
+  font-size: 13px;
+}
+.add-bar input.address { flex: 1; }
+.add-bar input.symbol { width: 180px; }
+.add-bar button {
+  background: #14F195; color: #0a0e14; border: none;
+  padding: 8px 16px; border-radius: 4px; font-weight: 600;
+  cursor: pointer; font-size: 13px;
+}
+
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th { color: #6b7280; font-weight: 500; text-align: left; padding: 8px 6px; font-size: 11px; }
+td { padding: 7px 6px; border-top: 1px solid #1a2030; font-size: 12px; }
+tr:hover td { background: #0f141d; }
+.symbol { font-weight: 500; color: #d0d4dc; }
+.addr { color: #6b7280; font-family: monospace; }
+.purple { color: #a855f7; }
+.dim { color: #6b7280; }
+.action-btn {
+  background: #2a1f1f; color: #ff5757; border: none;
+  padding: 4px 10px; border-radius: 3px; cursor: pointer;
+  font-size: 11px;
+}
+
+/* Signal log */
+.signal-log {
+  background: #0a0e14; border-radius: 4px;
+  font-family: 'SF Mono', Menlo, monospace; font-size: 11px;
+  max-height: 200px; overflow-y: auto; padding: 8px;
+}
+.signal-log .row { padding: 2px 0; display: flex; gap: 12px; }
+.signal-log .ts { color: #6b7280; min-width: 60px; }
+.signal-log .type-buy { color: #14F195; min-width: 60px; }
+.signal-log .type-sell { color: #ff5757; min-width: 60px; }
+.signal-log .type-skip { color: #6b7280; min-width: 60px; }
+.signal-log .sym { color: #d0d4dc; min-width: 100px; }
+
+/* Pagination */
+.pagination {
+  display: flex; justify-content: center; align-items: center; gap: 12px;
+  margin: 16px 0;
+}
+.pagination button {
+  background: #1a2030; color: #d0d4dc; border: 1px solid #2a3447;
+  padding: 6px 14px; border-radius: 4px; cursor: pointer;
+}
+.pagination button:hover { background: #2a3447; }
+.pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo"><span class="sol-icon"></span><span class="brand">SOL</span> RSI+量能 V5</div>
+  <span class="tag" id="modeTag"><span class="dot"></span><span id="modeText">加载中...</span></span>
+  <span class="status-pill" id="connStatus">⚡ 连接中...</span>
+  <span class="status-pill"><span id="tokenCount">0</span> 代币</span>
+  <span class="status-pill">数据: <span id="signalCount">0</span> 信号</span>
+</div>
+
+<!-- 24h Stats -->
+<div class="section-title">24小时统计</div>
+<div class="stats-grid" id="statsGrid">
+  <!-- 动态生成 -->
+</div>
+
+<!-- 实时行情 -->
+<div class="panel">
+  <div class="panel-header">
+    <div class="panel-title">实时行情 <span class="panel-meta" id="pageInfo">第1页 / 共1页</span></div>
+  </div>
+  <div class="add-bar">
+    <input type="text" class="address" id="addAddress" placeholder="输入代币合约地址">
+    <input type="text" class="symbol" id="addSymbol" placeholder="代币名称(可选)">
+    <button onclick="addToken()">+ 添加</button>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>代币</th><th>合约</th><th>价格</th>
+        <th>FDV</th><th>LP</th><th>Age</th><th>RSI</th><th>prevRSI</th>
+        <th>信号</th><th>原因</th><th>K线</th><th>交易</th><th>状态</th><th>操作</th>
+      </tr>
+    </thead>
+    <tbody id="tokenTable"></tbody>
+  </table>
+  <div class="pagination">
+    <button onclick="changePage(-1)">← 上一页</button>
+    <span id="pageLabel">1 / 1</span>
+    <button onclick="changePage(1)">下一页 →</button>
+  </div>
+</div>
+
+<!-- 信号日志 -->
+<div class="panel">
+  <div class="panel-title" style="margin-bottom: 10px;">信号日志</div>
+  <div class="signal-log" id="signalLog"></div>
+</div>
+
+<!-- 成交记录 -->
+<div class="panel">
+  <div class="panel-header">
+    <div class="panel-title">成交记录 <span class="panel-meta" id="tradesMeta"></span></div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>代币</th><th>合约</th><th>买入原因</th>
+        <th>买入SOL</th><th>卖出SOL</th><th>PnL(SOL)</th><th>PnL%</th>
+        <th>退出原因</th><th>时间</th>
+      </tr>
+    </thead>
+    <tbody id="tradesTable"></tbody>
+  </table>
+</div>
+
+<script>
+let currentPage = 1;
+const PAGE_SIZE = 15;
+let allTokens = [];
+
+async function fetchJson(url) {
+  const r = await fetch(url);
+  return r.json();
+}
+
+function fmt(n, d=2) {
+  if (n == null || isNaN(n)) return '-';
+  return Number(n).toLocaleString('en-US', { maximumFractionDigits: d });
+}
+function fmtPct(n, d=2) {
+  if (n == null || isNaN(n)) return '-';
+  return (n * 100).toFixed(d) + '%';
+}
+function fmtUsd(n) {
+  if (n == null) return '-';
+  if (n >= 1_000_000) return '$' + (n/1_000_000).toFixed(1) + 'M';
+  if (n >= 1_000) return '$' + (n/1_000).toFixed(0) + 'K';
+  return '$' + Math.round(n);
+}
+function fmtAge(addedAt, listedAt) {
+  const ms = Date.now() - (listedAt || addedAt);
+  const h = ms / 3600_000;
+  if (h < 24) return h.toFixed(1) + 'h';
+  return (h/24).toFixed(1) + 'd';
+}
+function shortAddr(addr) {
+  return addr.slice(0, 4) + '...' + addr.slice(-4);
+}
+function timeStr(ts) {
+  const d = new Date(ts);
+  return d.toLocaleTimeString('zh-CN', { hour12: false }) + ' ' +
+         (d.getMonth()+1) + '/' + d.getDate();
+}
+
+async function refreshStats() {
+  const data = await fetchJson('/api/stats');
+  if (!data.ok) return;
+
+  const cards = [
+    { v: data.total, l: '总交易', cls: 'gray' },
+    { v: data.wins, l: '盈利', cls: 'green' },
+    { v: data.losses, l: '亏损', cls: 'red' },
+    { v: fmtPct(data.winRate), l: '胜率', cls: data.winRate >= 0.5 ? 'green' : 'red' },
+    { v: fmt(data.totalPnlSol, 4), l: '总PnL(SOL)', cls: data.totalPnlSol >= 0 ? 'green' : 'red' },
+    { v: fmtPct(data.avgPnlPct), l: '平均PnL%', cls: data.avgPnlPct >= 0 ? 'green' : 'red' },
+    { v: fmtPct(data.avgWinPct), l: '平均赢利%', cls: 'green' },
+    { v: fmt(data.profitFactor, 2), l: '盈亏比', cls: data.profitFactor >= 1 ? 'green' : 'red' },
+  ];
+  document.getElementById('statsGrid').innerHTML = cards.map(c =>
+    `<div class="stat-card"><div class="stat-value ${c.cls}">${c.v}</div><div class="stat-label">${c.l}</div></div>`
+  ).join('');
+
+  document.getElementById('tokenCount').textContent = data.tokenCount;
+  document.getElementById('signalCount').textContent = data.signalCount;
+}
+
+async function refreshTokens() {
+  const data = await fetchJson('/api/tokens');
+  if (!data.ok) return;
+  allTokens = data.tokens;
+  renderTokenTable();
+}
+
+function renderTokenTable() {
+  const total = allTokens.length;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  if (currentPage > totalPages) currentPage = totalPages;
+
+  const start = (currentPage - 1) * PAGE_SIZE;
+  const slice = allTokens.slice(start, start + PAGE_SIZE);
+
+  document.getElementById('tokenTable').innerHTML = slice.map(t => {
+    const status = t.hasPosition ? '<span class="green">持仓</span>' : '<span class="dim">观望</span>';
+    return `<tr>
+      <td class="symbol">${t.symbol}</td>
+      <td class="addr">${shortAddr(t.address)}</td>
+      <td>${fmt(t.lastPrice, 8) || '-'}</td>
+      <td>${fmtUsd(t.fdv)}</td>
+      <td>${fmtUsd(t.lpUsd)}</td>
+      <td>${fmtAge(t.addedAt, t.listedAt)}</td>
+      <td class="${(t.rsi||50) < 30 ? 'red' : (t.rsi||50) > 70 ? 'green' : ''}">${fmt(t.rsi, 2) || '-'}</td>
+      <td class="dim">${fmt(t.prevRsi, 2) || '-'}</td>
+      <td>${t.lastSignal || 'none'}</td>
+      <td class="dim">${t.lastSignalReason || '-'}</td>
+      <td>${t.candleCount || 0}</td>
+      <td>${t.tradeCount || 0}</td>
+      <td>${status}</td>
+      <td><button class="action-btn" onclick="removeToken('${t.address}')">×</button></td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('pageInfo').textContent = `第${currentPage}页 / 共${totalPages}页`;
+  document.getElementById('pageLabel').textContent = `${currentPage} / ${totalPages}`;
+}
+
+function changePage(d) {
+  const totalPages = Math.max(1, Math.ceil(allTokens.length / PAGE_SIZE));
+  currentPage = Math.max(1, Math.min(totalPages, currentPage + d));
+  renderTokenTable();
+}
+
+async function refreshSignals() {
+  const data = await fetchJson('/api/signals?limit=80');
+  if (!data.ok) return;
+  document.getElementById('signalLog').innerHTML = data.signals.map(s => {
+    const ts = new Date(s.ts).toLocaleTimeString('zh-CN', { hour12: false });
+    let cls = 'type-skip', label = s.type;
+    if (s.type === 'BUY_SIGNAL') { cls = 'type-buy'; label = 'BUY'; }
+    else if (s.type === 'SELL') { cls = 'type-sell'; label = 'SELL'; }
+    else if (s.type && s.type.startsWith('SKIP')) { cls = 'type-skip'; label = 'SKIP'; }
+    const sym = s.symbol || '-';
+    const detail = s.reason || s.error || JSON.stringify(s.info || {});
+    return `<div class="row"><span class="ts">${ts}</span><span class="${cls}">${label}</span><span class="sym">${sym}</span><span>${detail}</span></div>`;
+  }).join('');
+}
+
+async function refreshTrades() {
+  const data = await fetchJson('/api/trades?limit=80');
+  if (!data.ok) return;
+  document.getElementById('tradesMeta').textContent =
+    `${data.trades.length}笔`;
+  document.getElementById('tradesTable').innerHTML = data.trades.map(t => {
+    const cls = t.pnlSol >= 0 ? 'green' : 'red';
+    return `<tr>
+      <td class="symbol">${t.symbol}</td>
+      <td class="addr">${shortAddr(t.address)}</td>
+      <td class="dim" style="font-size:11px">${(t.entryReason||'').slice(0, 50)}</td>
+      <td>${fmt(t.entrySol, 4)}</td>
+      <td>${fmt(t.exitSol, 4)}</td>
+      <td class="${cls}">${t.pnlSol >= 0 ? '+' : ''}${fmt(t.pnlSol, 4)}</td>
+      <td class="${cls}">${t.pnlPct >= 0 ? '+' : ''}${fmtPct(t.pnlPct)}</td>
+      <td class="dim" style="font-size:11px">${(t.exitReason||'').slice(0, 40)}</td>
+      <td class="dim">${timeStr(t.exitTs)}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function addToken() {
+  const address = document.getElementById('addAddress').value.trim();
+  const symbol = document.getElementById('addSymbol').value.trim();
+  if (!address) return alert('请输入合约地址');
+  try {
+    const r = await fetch('/api/tokens', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ network: 'solana', address, symbol }),
+    });
+    const j = await r.json();
+    if (!j.ok) return alert(j.error || j.msg);
+    document.getElementById('addAddress').value = '';
+    document.getElementById('addSymbol').value = '';
+    refreshTokens();
+  } catch (e) { alert(e.message); }
+}
+
+async function removeToken(addr) {
+  if (!confirm('确定移除此 token?有持仓会先卖出')) return;
+  await fetch('/api/tokens/' + addr, { method: 'DELETE' });
+  refreshTokens();
+}
+
+async function refreshMode() {
+  // 通过 /api/stats 不直接给 mode,留给后端补;先看 token 池/信号是否真实
+  const r = await fetch('/api/stats');
+  const j = await r.json();
+  // 简化判断:这里直接显示
+  document.getElementById('modeText').textContent = '实盘模式';
+  document.getElementById('modeTag').className = 'tag';
+  document.getElementById('connStatus').textContent = '⚡ 已连接';
+}
+
+async function refreshAll() {
+  await Promise.all([
+    refreshStats(),
+    refreshTokens(),
+    refreshSignals(),
+    refreshTrades(),
+    refreshMode(),
+  ]);
+}
+
+refreshAll();
+setInterval(refreshAll, 3000);
+</script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "dryRun": true,
+  "heliusApiKey": "你的_helius_key",
+  "heliusEndpoint": "wss://laserstream-mainnet-tokyo.helius-rpc.com",
+  "heliusRegion": "tokyo",
+
+  "walletPrivateKey": "实盘时填入",
+
+  "dashboardPort": 3001,
+
+  "minFdv": 30000,
+  "minLpUsd": 10000,
+
+  "positionSizeSol": 0.5,
+  "maxLpPercent": 0.015,
+  "maxTotalExposureSol": 5,
+
+  "dailyReportHour": 8,
+  "webhookEnabled": true
+}
